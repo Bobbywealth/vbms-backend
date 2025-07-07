@@ -17,17 +17,25 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const dashboardRoutes = require('./routes/dashboard');
+const usersRoutes = require('./routes/users');
+const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin'); // Moved up here ✅
+
+app.use('/api/auth', authRoutes);
+app.use('/api/users', usersRoutes);
+app.use('/api/admin', adminRoutes); // Moved up here ✅
+app.use('/api', dashboardRoutes); // moved here!
+
 const PORT = 5050;
 
 // --- Connect to MongoDB ---
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-}).then(() => {
-  console.log('MongoDB connected');
-}).catch((err) => {
-  console.error('MongoDB connection error:', err);
-});
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log('MongoDB connected');
+  }).catch((err) => {
+    console.error('MongoDB connection error:', err);
+  });
 
 // --- HEALTH CHECK ---
 app.get('/', (req, res) => {
@@ -63,15 +71,20 @@ app.post('/api/auth/register', async (req, res) => {
     if (exists)
       return res.status(409).json({ message: 'Email already registered.' });
 
-    const user = new User({ name, email, password });
+    const user = new User({
+      name,
+      email,
+      password,
+      role: 'client'    // force all signups to client
+    });
     await user.save();
 
     const token = jwt.sign(
-      { id: user._id, email: user.email, name: user.name },
+      { id: user._id, email: user.email, name: user.name, role: user.role },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
-    res.status(201).json({ token, user: { name: user.name, email: user.email } });
+    res.status(201).json({ token, user: { name: user.name, email: user.email, role: user.role } });
   } catch (err) {
     res.status(500).json({ message: 'Registration failed.', error: err.message });
   }
@@ -93,11 +106,20 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid email or password.' });
 
     const token = jwt.sign(
-      { id: user._id, email: user.email, name: user.name },
+      { id: user._id, email: user.email, name: user.name, role: user.role }, // INCLUDE ROLE
       JWT_SECRET,
       { expiresIn: '7d' }
     );
-    res.json({ token, user: { name: user.name, email: user.email } });
+
+    // Send role in user object
+    res.json({
+      token,
+      user: {
+        name: user.name,
+        email: user.email,
+        role: user.role // INCLUDE ROLE
+      }
+    });
   } catch (err) {
     res.status(500).json({ message: 'Login failed.', error: err.message });
   }
